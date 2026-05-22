@@ -1,4 +1,4 @@
-const express = require('express');
+ const express = require('express');
 const fetch = require('node-fetch');
 const app = express();
 
@@ -82,7 +82,7 @@ body{background:linear-gradient(160deg,#0a0a0a,#111008,#0a0a0a);font-family:Geor
   <div class="stat"><div class="stat-icon">🏠</div><div class="stat-value" id="s-props">-</div><div class="stat-label">Propriétés</div></div>
   <div class="stat"><div class="stat-icon">🛬</div><div class="stat-value blue" id="s-checkin">-</div><div class="stat-label">Arrivées</div></div>
   <div class="stat"><div class="stat-icon">🛫</div><div class="stat-value orange" id="s-checkout">-</div><div class="stat-label">Départs</div></div>
-  <div class="stat"><div class="stat-icon">📊</div><div class="stat-value" id="s-total">-</div><div class="stat-label">Total résas</div></div>
+  <div class="stat"><div class="stat-icon">💶</div><div class="stat-value" id="s-total">-</div><div class="stat-label">Revenus total</div></div>
 </div>
 <div class="tabs">
   <button class="tab active" onclick="showTab('reservations',this)">📅 Réservations</button>
@@ -94,16 +94,16 @@ body{background:linear-gradient(160deg,#0a0a0a,#111008,#0a0a0a);font-family:Geor
 function showTab(n,btn){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');document.getElementById('tab-reservations').classList.toggle('hidden',n!=='reservations');document.getElementById('tab-properties').classList.toggle('hidden',n!=='properties')}
 function fmt(d){return new Date(d).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'})}
 function fmtM(n){return Math.round(n).toLocaleString('fr-FR')+' €'}
-function nights(r){return Math.round((new Date(r.departure)-new Date(r.arrival))/86400000)}
-function statusInfo(r){const now=new Date(),arr=new Date(r.arrival),dep=new Date(r.departure);if(arr<=now&&dep>now)return{label:'En cours',color:'#4caf50'};if(arr>now)return{label:'À venir',color:'#d4af37'};return{label:'Passée',color:'#666'}}
+function nights(r){return Math.round((new Date(r['departure'])-new Date(r['arrival']))/86400000)}
+function statusInfo(r){const now=new Date(),arr=new Date(r['arrival']),dep=new Date(r['departure']);if(arr<=now&&dep>now)return{label:'En cours',color:'#4caf50'};if(arr>now)return{label:'À venir',color:'#d4af37'};return{label:'Passée',color:'#666'}}
 async function loadData(){
   document.getElementById('lastUpdate').textContent='Chargement...';
   document.getElementById('error').classList.add('hidden');
   try{
     const[rr,ar]=await Promise.all([fetch('/api/reservations?pageSize=100'),fetch('/api/apartments')]);
-    const reservations=rr.ok?await rr.json():null;
-    const apartments=ar.ok?await ar.json():null;
-    render(reservations,apartments);
+    const resData=rr.ok?await rr.json():{};
+    const aptData=ar.ok?await ar.json():{};
+    render(resData,aptData);
     const now=new Date();
     document.getElementById('lastUpdate').textContent='Mis à jour '+now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
   }catch(e){
@@ -113,26 +113,27 @@ async function loadData(){
   }
 }
 function render(resData,aptData){
-  const reservations=resData?.data||[];
-  const apartments=aptData?.apartments||aptData?.data||aptData||[];
+  const bookings=resData.bookings||resData.data||[];
+  const apartments=aptData.apartments||aptData.data||[];
   const today=new Date();
   const som=new Date(today.getFullYear(),today.getMonth(),1);
   const eom=new Date(today.getFullYear(),today.getMonth()+1,0);
-  const real=reservations.filter(r=>r.type!=='blocked');
-  const thisMonth=real.filter(r=>{const d=new Date(r.arrival);return d>=som&&d<=eom});
-  const revenue=thisMonth.reduce((s,r)=>s+(r.price||0),0);
-  const ci=real.filter(r=>new Date(r.arrival).toDateString()===today.toDateString());
-  const co=real.filter(r=>new Date(r.departure).toDateString()===today.toDateString());
-  const upcoming=real.filter(r=>new Date(r.arrival)>=today).sort((a,b)=>new Date(a.arrival)-new Date(b.arrival)).slice(0,15);
+  const real=bookings.filter(r=>!r['is-blocked-booking']);
+  const thisMonth=real.filter(r=>{const d=new Date(r['arrival']);return d>=som&&d<=eom});
+  const revenue=thisMonth.reduce((s,r)=>s+(r['price']||0),0);
+  const totalRevenue=real.reduce((s,r)=>s+(r['price']||0),0);
+  const ci=real.filter(r=>new Date(r['arrival']).toDateString()===today.toDateString());
+  const co=real.filter(r=>new Date(r['departure']).toDateString()===today.toDateString());
+  const upcoming=real.filter(r=>new Date(r['departure'])>=today).sort((a,b)=>new Date(a['arrival'])-new Date(b['arrival']));
   document.getElementById('s-month').textContent=thisMonth.length;
   document.getElementById('s-revenue').textContent=fmtM(revenue);
   document.getElementById('s-props').textContent=apartments.length;
   document.getElementById('s-checkin').textContent=ci.length;
   document.getElementById('s-checkout').textContent=co.length;
-  document.getElementById('s-total').textContent=real.length;
+  document.getElementById('s-total').textContent=fmtM(totalRevenue);
   document.getElementById('stats').classList.remove('hidden');
   const rd=document.getElementById('tab-reservations');
-  rd.innerHTML=upcoming.length===0?'<div class="empty">Aucune réservation à venir</div>':upcoming.map(r=>{const s=statusInfo(r);const name=(r.guestName||(r.firstname?r.firstname+' '+(r.lastname||''):'Guest')).trim();const prop=r.apartment?.name||'Propriété';return'<div class="card"><div style="flex:1;min-width:0"><div class="card-name">'+name+'</div><div class="card-prop">'+prop+'</div><div class="card-dates">'+fmt(r.arrival)+' → '+fmt(r.departure)+' · '+nights(r)+' nuit'+(nights(r)>1?'s':'')+'</div></div><div style="flex-shrink:0;margin-left:12px;text-align:right"><div class="card-price">'+(r.price?fmtM(r.price):'N/A')+'</div><span class="badge" style="background:'+s.color+'20;color:'+s.color+';border:1px solid '+s.color+'40">'+s.label+'</span></div></div>'}).join('');
+  rd.innerHTML=upcoming.length===0?'<div class="empty">Aucune réservation</div>':upcoming.map(r=>{const s=statusInfo(r);const name=(r['guest-name']||(r['firstname']?r['firstname']+' '+(r['lastname']||''):'Guest')).trim()||'Guest';const prop=r['apartment']?r['apartment']['name']:'Propriété';const channel=r['channel']?r['channel']['name']:'';return'<div class="card"><div style="flex:1;min-width:0"><div class="card-name">'+name+'</div><div class="card-prop">'+prop+(channel?' · '+channel:'')+'</div><div class="card-dates">'+fmt(r['arrival'])+' → '+fmt(r['departure'])+' · '+nights(r)+' nuit'+(nights(r)>1?'s':'')+'</div></div><div style="flex-shrink:0;margin-left:12px;text-align:right"><div class="card-price">'+(r['price']?fmtM(r['price']):'N/A')+'</div><span class="badge" style="background:'+s.color+'20;color:'+s.color+';border:1px solid '+s.color+'40">'+s.label+'</span></div></div>'}).join('');
   const ad=document.getElementById('tab-properties');
   ad.innerHTML=apartments.length===0?'<div class="empty">Aucune propriété</div>':apartments.map(apt=>'<div class="card" style="flex-direction:column"><div style="font-weight:bold;font-size:14px;color:#d4af37;margin-bottom:4px">'+(apt.name||'Propriété')+'</div><div style="font-size:12px;color:#a09070">'+(apt.location||apt.city||'Rouen')+'</div>'+(apt.maxPersons?'<div style="font-size:12px;color:#6a5f50;margin-top:2px">👤 '+apt.maxPersons+' personnes max</div>':'')+'</div>').join('');
 }
@@ -142,4 +143,4 @@ loadData();
 </html>`);
 });
 
-app.listen(process.env.PORT || 3000);
+app.listen(process.env.PORT || 3000); document.getElementById('s-month
